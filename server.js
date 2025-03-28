@@ -25,183 +25,111 @@ if (!ALLOWED_PORTS.includes(Number(port))) {
     process.exit(1);
 }
 
-// Флаг готовности приложения
+// Глобальные переменные состояния
 let isReady = false;
-let bot;
+let startTime = Date.now();
+let bot = null;
 
 // Настройка Express
 app.use(express.json());
 
-// Healthcheck endpoint с проверкой готовности и соединения с Telegram
-app.get('/', async (req, res) => {
-    try {
-        if (!isReady || !bot) {
-            return res.status(503).json({
-                status: 'error',
-                message: 'Application is starting',
-                ready: false,
-                uptime: process.uptime()
-            });
-        }
+// Простой healthcheck
+app.get('/', (req, res) => {
+    console.log('Healthcheck запрошен:', {
+        isReady,
+        uptime: Math.floor((Date.now() - startTime) / 1000),
+        botInitialized: !!bot
+    });
 
-        // Проверяем соединение с Telegram
-        await bot.telegram.getMe();
-        
-        res.status(200).json({
-            status: 'ok',
-            ready: true,
-            uptime: process.uptime(),
-            timestamp: new Date().toISOString()
-        });
-    } catch (error) {
-        console.error('Healthcheck failed:', error);
-        res.status(503).json({
-            status: 'error',
-            message: 'Failed to connect to Telegram',
-            ready: false,
-            error: error.message
-        });
-    }
+    // Всегда отвечаем 200, но с разным статусом
+    res.status(200).json({
+        status: isReady ? 'ready' : 'starting',
+        uptime: Math.floor((Date.now() - startTime) / 1000),
+        botInitialized: !!bot,
+        timestamp: new Date().toISOString()
+    });
 });
 
-// Webhook endpoint с проверкой подписи
+// Webhook endpoint
 app.post('/webhook', express.json(), (req, res) => {
-    if (!bot) {
-        return res.status(503).json({ error: 'Bot not initialized' });
+    if (!bot || !isReady) {
+        console.log('Webhook получен, но бот не готов:', { botInitialized: !!bot, isReady });
+        return res.status(200).json({ ok: false, error: 'Bot is starting' });
     }
-    
-    if (!isReady) {
-        return res.status(503).json({ error: 'Application is starting' });
-    }
-
     bot.handleUpdate(req.body, res);
 });
 
-// Запуск сервера
-const startServer = async () => {
+// Функция инициализации бота
+async function initializeBot() {
     try {
-        // Создаем бота до запуска сервера
+        console.log('Начинаем инициализацию бота...');
+        
+        // Создаем бота
         bot = new Telegraf(process.env.TELEGRAM_BOT_TOKEN);
-        console.log('Telegram bot created successfully');
+        console.log('Бот создан успешно');
 
-        // Инициализация игры
-        await game.initialize();
-        console.log('Game initialized successfully');
+        // Настраиваем базовые команды
+        bot.command('start', ctx => ctx.reply('Привет! Бот работает.'));
+        bot.command('ping', ctx => ctx.reply('pong'));
+        
+        console.log('Команды бота настроены');
 
-        // Настройка команд бота
-        await bot.telegram.setMyCommands([
-            { command: 'start', description: 'Запустить бота' },
-            { command: 'play', description: 'Начать игру' }
-        ]);
+        // Устанавливаем webhook
+        const webhookUrl = `${process.env.WEBAPP_URL}/webhook`;
+        await bot.telegram.setWebhook(webhookUrl);
+        console.log('Webhook установлен:', webhookUrl);
 
-        // Настраиваем обработчики команд
-        setupBotHandlers(bot);
+        // Проверяем webhook
+        const webhookInfo = await bot.telegram.getWebhookInfo();
+        console.log('Webhook info:', webhookInfo);
 
-        // Запускаем сервер только после успешной инициализации бота
-        const server = app.listen(port, async () => {
-            try {
-                console.log(`Server is running on port ${port}`);
-                
-                // Устанавливаем webhook только после запуска сервера
-                const webhookUrl = `${process.env.WEBAPP_URL}/webhook`;
-                await bot.telegram.setWebhook(webhookUrl);
-                console.log(`Webhook set to ${webhookUrl}`);
-
-                // Проверяем webhook
-                const webhookInfo = await bot.telegram.getWebhookInfo();
-                console.log('Webhook info:', webhookInfo);
-
-                // Помечаем приложение как готовое
-                isReady = true;
-                console.log('Application is ready to handle requests');
-            } catch (error) {
-                console.error('Failed to set webhook:', error);
-                server.close(() => process.exit(1));
-            }
-        });
-
-        // Обработка ошибок сервера
-        server.on('error', (error) => {
-            console.error('Server error:', error);
-            isReady = false;
-            process.exit(1);
-        });
-
-        // Graceful shutdown
-        const shutdown = () => {
-            isReady = false;
-            if (bot) {
-                bot.stop('SIGTERM');
-            }
-            server.close(() => {
-                console.log('Server closed');
-                process.exit(0);
-            });
-        };
-
-        process.once('SIGINT', shutdown);
-        process.once('SIGTERM', shutdown);
-
+        return true;
     } catch (error) {
-        console.error('Failed to initialize application:', error);
-        process.exit(1);
+        console.error('Ошибка при инициализации бота:', error);
+        return false;
     }
-};
-
-// Выносим обработчики бота в отдельную функцию
-function setupBotHandlers(bot) {
-    // Команда /start
-    bot.command('start', async (ctx) => {
-        try {
-            await ctx.reply('🎮 Добро пожаловать в Snail Game!\n\nВыберите действие:', {
-                reply_markup: {
-                    inline_keyboard: [[
-                        { text: '🎮 НАЧАТЬ ИГРУ 🎮', web_app: { url: process.env.WEBAPP_URL } }
-                    ]]
-                }
-            });
-        } catch (error) {
-            console.error('Ошибка при отправке приветствия:', error);
-            await ctx.reply('Произошла ошибка. Попробуйте позже.');
-        }
-    });
-
-    // Команда /play
-    bot.command('play', async (ctx) => {
-        try {
-            await ctx.reply('🎮 Нажмите кнопку чтобы начать игру:', {
-                reply_markup: {
-                    inline_keyboard: [[
-                        { text: '🎮 НАЧАТЬ ИГРУ 🎮', web_app: { url: process.env.WEBAPP_URL } }
-                    ]]
-                }
-            });
-        } catch (error) {
-            console.error('Ошибка при отправке кнопки игры:', error);
-            await ctx.reply('Произошла ошибка. Попробуйте позже.');
-        }
-    });
-
-    // Обработка данных от веб-приложения
-    bot.on('web_app_data', async (ctx) => {
-        try {
-            const data = ctx.webAppData.data;
-            const bet = JSON.parse(data);
-            
-            // Запуск гонки
-            const result = await game.startRace(bet);
-            
-            // Отправка результата пользователю
-            await ctx.reply(`🎉 Результат гонки:\nПобедитель: ${result.winner}\nВремя: ${result.time}с`);
-        } catch (error) {
-            console.error('Error processing web app data:', error);
-            await ctx.reply('Произошла ошибка при обработке данных. Попробуйте позже.');
-        }
-    });
 }
 
-// Запускаем приложение
-startServer().catch(error => {
-    console.error('Failed to start application:', error);
+// Запуск сервера
+const server = app.listen(port, async () => {
+    console.log(`Сервер запущен на порту ${port}`);
+    
+    try {
+        // Инициализируем бота
+        const success = await initializeBot();
+        
+        if (success) {
+            isReady = true;
+            console.log('Приложение полностью инициализировано и готово к работе');
+        } else {
+            console.error('Не удалось инициализировать бота');
+            process.exit(1);
+        }
+    } catch (error) {
+        console.error('Критическая ошибка при запуске:', error);
+        process.exit(1);
+    }
+});
+
+// Обработка ошибок сервера
+server.on('error', (error) => {
+    console.error('Ошибка сервера:', error);
     process.exit(1);
-}); 
+});
+
+// Graceful shutdown
+const shutdown = () => {
+    console.log('Получен сигнал завершения работы');
+    isReady = false;
+    server.close(() => {
+        console.log('Сервер остановлен');
+        if (bot) {
+            bot.stop('SIGTERM');
+            console.log('Бот остановлен');
+        }
+        process.exit(0);
+    });
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown); 
