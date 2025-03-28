@@ -19,14 +19,25 @@ if (!process.env.WEBAPP_URL) {
 // Используем порт из Railway
 const port = process.env.PORT || 3000;
 
+// Флаг готовности приложения
+let isReady = false;
 let bot;
 
 // Настройка Express
 app.use(express.json());
 
-// Healthcheck endpoint - максимально простой
+// Healthcheck endpoint с проверкой готовности
 app.get('/', (req, res) => {
-    res.status(200).send('OK');
+    if (!isReady) {
+        return res.status(503).json({
+            status: 'error',
+            message: 'Application is starting'
+        });
+    }
+    res.status(200).json({
+        status: 'ok',
+        uptime: process.uptime()
+    });
 });
 
 // Webhook endpoint
@@ -111,7 +122,9 @@ const server = app.listen(port, async () => {
         await bot.telegram.setWebhook(webhookUrl);
         console.log(`Webhook set to ${webhookUrl}`);
         
-        console.log('Bot successfully launched with webhook');
+        // Помечаем приложение как готовое
+        isReady = true;
+        console.log('Application is ready to handle requests');
     } catch (error) {
         console.error('Failed to initialize:', error);
         server.close(() => {
@@ -128,11 +141,13 @@ server.on('error', (error) => {
 
 // Graceful shutdown
 process.once('SIGINT', () => {
+    isReady = false;
     if (bot) bot.stop('SIGINT');
     process.exit(0);
 });
 
 process.once('SIGTERM', () => {
+    isReady = false;
     if (bot) bot.stop('SIGTERM');
     process.exit(0);
 }); 
