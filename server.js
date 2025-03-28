@@ -4,9 +4,6 @@ const { Telegraf } = require('telegraf');
 const game = require('./modules/game');
 
 const app = express();
-const port = process.env.PORT || 443;
-
-let bot;
 
 // Проверяем обязательные переменные окружения
 if (!process.env.TELEGRAM_BOT_TOKEN) {
@@ -19,18 +16,17 @@ if (!process.env.WEBAPP_URL) {
     process.exit(1);
 }
 
-// URL для веб-приложения
-const webAppUrl = process.env.WEBAPP_URL;
+// Используем порт из Railway
+const port = process.env.PORT || 3000;
+
+let bot;
 
 // Настройка Express
 app.use(express.json());
 
-// Healthcheck endpoint
+// Healthcheck endpoint - максимально простой
 app.get('/', (req, res) => {
-    res.status(200).json({ 
-        status: 'ok',
-        timestamp: new Date().toISOString()
-    });
+    res.status(200).send('OK');
 });
 
 // Webhook endpoint
@@ -67,7 +63,7 @@ const server = app.listen(port, async () => {
                 await ctx.reply('🎮 Добро пожаловать в Snail Game!\n\nВыберите действие:', {
                     reply_markup: {
                         inline_keyboard: [[
-                            { text: '🎮 НАЧАТЬ ИГРУ 🎮', web_app: { url: webAppUrl } }
+                            { text: '🎮 НАЧАТЬ ИГРУ 🎮', web_app: { url: process.env.WEBAPP_URL } }
                         ]]
                     }
                 });
@@ -83,7 +79,7 @@ const server = app.listen(port, async () => {
                 await ctx.reply('🎮 Нажмите кнопку чтобы начать игру:', {
                     reply_markup: {
                         inline_keyboard: [[
-                            { text: '🎮 НАЧАТЬ ИГРУ 🎮', web_app: { url: webAppUrl } }
+                            { text: '🎮 НАЧАТЬ ИГРУ 🎮', web_app: { url: process.env.WEBAPP_URL } }
                         ]]
                     }
                 });
@@ -111,13 +107,9 @@ const server = app.listen(port, async () => {
         });
 
         // Запускаем бота с webhook
-        await bot.launch({
-            webhook: {
-                domain: process.env.WEBAPP_URL,
-                hookPath: '/webhook',
-                port: port
-            }
-        });
+        const webhookUrl = `${process.env.WEBAPP_URL}/webhook`;
+        await bot.telegram.setWebhook(webhookUrl);
+        console.log(`Webhook set to ${webhookUrl}`);
         
         console.log('Bot successfully launched with webhook');
     } catch (error) {
@@ -139,6 +131,7 @@ process.once('SIGINT', () => {
     if (bot) bot.stop('SIGINT');
     process.exit(0);
 });
+
 process.once('SIGTERM', () => {
     if (bot) bot.stop('SIGTERM');
     process.exit(0);
