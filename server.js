@@ -1,6 +1,10 @@
 require('dotenv').config();
+const express = require('express');
 const { Telegraf } = require('telegraf');
 const game = require('./modules/game');
+
+const app = express();
+const port = process.env.PORT || 443;
 
 let bot;
 
@@ -32,6 +36,42 @@ try {
 
 // URL для веб-приложения
 const webAppUrl = process.env.WEBAPP_URL;
+
+// Настройка Express
+app.use(express.json());
+
+// Healthcheck endpoint
+app.get('/', async (req, res) => {
+    try {
+        // Проверяем, что бот запущен
+        if (!bot) {
+            return res.status(500).json({ 
+                status: 'error',
+                message: 'Bot not initialized'
+            });
+        }
+
+        // Проверяем подключение к Telegram
+        await bot.telegram.getMe();
+
+        res.status(200).json({ 
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            bot: 'running'
+        });
+    } catch (error) {
+        console.error('Healthcheck failed:', error);
+        res.status(500).json({ 
+            status: 'error',
+            message: error.message
+        });
+    }
+});
+
+// Webhook endpoint
+app.post('/webhook', (req, res) => {
+    bot.handleUpdate(req.body, res);
+});
 
 // Настройка бота
 bot.telegram.setMyCommands([
@@ -90,12 +130,41 @@ bot.on('web_app_data', async (ctx) => {
     }
 });
 
-// Запуск бота
-bot.launch().catch(error => {
-    console.error('Failed to launch bot:', error);
+// Запуск сервера и бота
+const server = app.listen(port, async () => {
+    try {
+        console.log(`Server is running on port ${port}`);
+        
+        // Запускаем бота с webhook
+        await bot.launch({
+            webhook: {
+                domain: process.env.WEBAPP_URL,
+                port: port
+            }
+        });
+        
+        console.log('Bot successfully launched with webhook');
+    } catch (error) {
+        console.error('Failed to start server or launch bot:', error);
+        // Закрываем сервер при ошибке
+        server.close(() => {
+            process.exit(1);
+        });
+    }
+});
+
+// Обработка ошибок сервера
+server.on('error', (error) => {
+    console.error('Server error:', error);
     process.exit(1);
 });
 
 // Graceful shutdown
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM')); 
+process.once('SIGINT', () => {
+    bot.stop('SIGINT');
+    process.exit(0);
+});
+process.once('SIGTERM', () => {
+    bot.stop('SIGTERM');
+    process.exit(0);
+}); 

@@ -1,0 +1,697 @@
+/**
+ * @fileoverview Основной модуль лабиринта для игры "Snail to Riches".
+ * Управляет созданием и рендерингом лабиринта.
+ * 
+ * @module Maze
+ * @author Snail to Riches Team
+ * @version 1.1.0
+ */
+
+import { MazeGenerator } from './Generator/mazeGenerator.js';
+import { CellTypes, DifficultyLevels, VisualizationSettings } from './constants.js';
+import { CONFIG } from '../../config.js';
+import { Logger } from '../utils/logger.js';
+import { ValidationError } from '../utils/errors.js';
+
+/**
+ * Класс для управления лабиринтом в игре
+ */
+export class Maze {
+    /**
+     * Создает экземпляр лабиринта
+     * @param {Object} scene - Игровая сцена
+     * @param {Object} options - Опции для создания лабиринта
+     * @param {number} [options.rows=20] - Количество строк в лабиринте
+     * @param {number} [options.cols=20] - Количество столбцов в лабиринте
+     * @param {string} [options.difficulty='medium'] - Уровень сложности лабиринта
+     * @throws {ValidationError} Если параметры невалидны
+     */
+    constructor(scene, options = {}) {
+        // Инициализация логгера
+        this.logger = new Logger('Maze');
+        this.logger.info('Initializing maze module');
+        
+        // Сохраняем ссылку на игровую сцену
+        this.scene = scene;
+        
+        // Получаем параметры из опций или конфига
+        this.rows = options.rows || CONFIG.MAZE.HEIGHT || 20;
+        this.cols = options.cols || CONFIG.MAZE.WIDTH || 20;
+        this.difficulty = options.difficulty || CONFIG.MAZE.DIFFICULTY || 'medium';
+        
+        // Валидация параметров
+        this.validateParameters();
+        
+        // Создаем генератор лабиринта
+        this.generator = new MazeGenerator({
+            rows: this.rows,
+            cols: this.cols,
+            difficulty: this.difficulty
+        });
+        
+        // Получаем константы типов ячеек
+        this.cellTypes = CellTypes;
+        
+        // Состояние отрисовки
+        this.renderState = {
+            isRendered: false,
+            cellSize: VisualizationSettings.CELL_SIZE,
+            colors: VisualizationSettings.COLORS,
+            borderSize: VisualizationSettings.BORDER_SIZE,
+            borderColor: VisualizationSettings.BORDER_COLOR
+        };
+        
+        // Данные лабиринта (будут заполнены после генерации)
+        this.grid = null;
+        this.start = null;
+        this.finish = null;
+        
+        this.logger.debug(`Maze initialized with size ${this.rows}x${this.cols}, difficulty: ${this.difficulty}`);
+    }
+    
+    /**
+     * Валидирует параметры лабиринта
+     * 
+     * @private
+     * @throws {ValidationError} Если параметры невалидны
+     */
+    validateParameters() {
+        // Проверка размеров
+        if (!Number.isInteger(this.rows) || this.rows < 5) {
+            throw new ValidationError(`Invalid rows value: ${this.rows}. Must be an integer >= 5`);
+        }
+        
+        if (!Number.isInteger(this.cols) || this.cols < 5) {
+            throw new ValidationError(`Invalid cols value: ${this.cols}. Must be an integer >= 5`);
+        }
+        
+        // Верхний предел для предотвращения проблем с производительностью
+        const maxSize = CONFIG.MAZE.MAX_SIZE || 50;
+        if (this.rows > maxSize || this.cols > maxSize) {
+            this.logger.warn(`Maze size exceeds recommended maximum (${maxSize}x${maxSize}). Performance may be affected.`);
+        }
+        
+        // Проверка уровня сложности
+        const validDifficulties = Object.values(DifficultyLevels);
+        if (!validDifficulties.includes(this.difficulty)) {
+            this.logger.warn(`Invalid difficulty: ${this.difficulty}. Using 'medium' as default.`);
+            this.difficulty = DifficultyLevels.MEDIUM;
+        }
+    }
+    
+    /**
+     * Генерирует лабиринт
+     * 
+     * @returns {Maze} Экземпляр лабиринта для цепочки вызовов
+     * @throws {Error} Если генерация не удалась
+     */
+    generate() {
+        try {
+            this.logger.info('Generating maze...');
+            this.logger.debug(`Maze parameters: size=${this.rows}x${this.cols}, difficulty=${this.difficulty}`);
+            
+            // Генерируем лабиринт с помощью генератора
+            const mazeData = this.generator.generate();
+            
+            // Сохраняем результат
+            this.grid = mazeData.grid;
+            this.start = mazeData.start;
+            this.finish = mazeData.finish;
+            
+            // Сбрасываем состояние отрисовки
+            this.renderState.isRendered = false;
+            
+            // Проверяем, что лабиринт корректно сгенерирован
+            this.validateGeneratedMaze();
+            
+            this.logger.info('Maze generated successfully');
+            
+            // Сохраняем состояние для возможного восстановления
+            this.saveState();
+            
+            return this;
+        } catch (error) {
+            this.logger.error('Failed to generate maze:', error);
+            throw new Error(`Maze generation failed: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Проверяет, что сгенерированный лабиринт корректен
+     * 
+     * @private
+     * @throws {Error} Если лабиринт некорректен
+     */
+    validateGeneratedMaze() {
+        // Проверка наличия данных
+        if (!this.grid || !this.start || !this.finish) {
+            throw new Error('Invalid maze data: missing required fields');
+        }
+        
+        // Проверка размеров сетки
+        if (this.grid.length !== this.rows) {
+            throw new Error(`Invalid grid rows: expected ${this.rows}, got ${this.grid.length}`);
+        }
+        
+        if (this.grid[0].length !== this.cols) {
+            throw new Error(`Invalid grid columns: expected ${this.cols}, got ${this.grid[0].length}`);
+        }
+        
+        // Проверка стартовой и финишной точек
+        if (!this.isValidPosition(this.start.row, this.start.col)) {
+            throw new Error(`Invalid start position: (${this.start.row}, ${this.start.col})`);
+        }
+        
+        if (!this.isValidPosition(this.finish.row, this.finish.col)) {
+            throw new Error(`Invalid finish position: (${this.finish.row}, ${this.finish.col})`);
+        }
+        
+        // Проверка типов ячеек старта и финиша
+        if (this.grid[this.start.row][this.start.col] !== this.cellTypes.START) {
+            throw new Error('Start position does not have START cell type');
+        }
+        
+        if (this.grid[this.finish.row][this.finish.col] !== this.cellTypes.FINISH) {
+            throw new Error('Finish position does not have FINISH cell type');
+        }
+        
+        // Проверка наличия пути от старта до финиша
+        const path = this.findPath(this.start.row, this.start.col, this.finish.row, this.finish.col);
+        if (path.length === 0) {
+            throw new Error('No path exists between start and finish');
+        }
+        
+        this.logger.debug('Generated maze validated successfully');
+    }
+    
+    /**
+     * Сохраняет состояние лабиринта для возможного восстановления
+     * 
+     * @private
+     */
+    saveState() {
+        try {
+            // Создаем объект с данными лабиринта
+            const state = {
+                grid: this.grid,
+                start: this.start,
+                finish: this.finish,
+                metadata: {
+                    rows: this.rows,
+                    cols: this.cols,
+                    difficulty: this.difficulty,
+                    timestamp: Date.now()
+                }
+            };
+            
+            // Сохраняем в localStorage
+            localStorage.setItem('maze_state', JSON.stringify(state));
+            this.logger.debug('Maze state saved to localStorage');
+        } catch (error) {
+            this.logger.warn('Failed to save maze state:', error);
+        }
+    }
+    
+    /**
+     * Восстанавливает состояние лабиринта из сохраненного
+     * 
+     * @returns {boolean} Успешность восстановления
+     */
+    restoreState() {
+        try {
+            const savedState = localStorage.getItem('maze_state');
+            if (!savedState) {
+                this.logger.debug('No saved maze state found');
+                return false;
+            }
+            
+            const state = JSON.parse(savedState);
+            
+            // Проверяем версию и совместимость
+            if (!state.metadata || 
+                state.metadata.rows !== this.rows || 
+                state.metadata.cols !== this.cols) {
+                this.logger.debug('Saved maze state is incompatible with current configuration');
+                return false;
+            }
+            
+            // Проверяем, что состояние не слишком старое (не старше 1 часа)
+            const maxAge = 60 * 60 * 1000; // 1 час в миллисекундах
+            const age = Date.now() - (state.metadata.timestamp || 0);
+            if (age > maxAge) {
+                this.logger.debug(`Saved maze state is too old (${Math.round(age / 60000)} minutes)`);
+                return false;
+            }
+            
+            // Восстанавливаем состояние
+            this.grid = state.grid;
+            this.start = state.start;
+            this.finish = state.finish;
+            this.difficulty = state.metadata.difficulty || this.difficulty;
+            
+            // Сбрасываем состояние отрисовки
+            this.renderState.isRendered = false;
+            
+            this.logger.info('Maze state restored successfully');
+            return true;
+        } catch (error) {
+            this.logger.error('Failed to restore maze state:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * Проверяет, находится ли ячейка внутри лабиринта
+     * 
+     * @param {number} row - Строка ячейки
+     * @param {number} col - Столбец ячейки
+     * @returns {boolean} true, если ячейка находится внутри лабиринта
+     */
+    isValidPosition(row, col) {
+        return row >= 0 && row < this.rows && col >= 0 && col < this.cols;
+    }
+    
+    /**
+     * Нахождение пути от старта до финиша
+     * 
+     * @param {number} startRow - Строка стартовой точки
+     * @param {number} startCol - Столбец стартовой точки
+     * @param {number} finishRow - Строка финишной точки
+     * @param {number} finishCol - Столбец финишной точки
+     * @returns {Array<Object>} Массив точек пути от старта до финиша, каждая точка имеет координаты {row, col}
+     */
+    findPath(startRow, startCol, finishRow, finishCol) {
+        // Проверяем, что лабиринт сгенерирован
+        if (!this.grid) {
+            this.logger.warn('Cannot find path: maze not generated');
+            return [];
+        }
+        
+        // Проверяем корректность входных данных
+        if (!this.isValidPosition(startRow, startCol) || !this.isValidPosition(finishRow, finishCol)) {
+            this.logger.warn(`Invalid positions for path finding: from (${startRow},${startCol}) to (${finishRow},${finishCol})`);
+            return [];
+        }
+        
+        // Используем генератор для поиска пути
+        return this.generator.findPath(this.grid, startRow, startCol, finishRow, finishCol);
+    }
+    
+    /**
+     * Получение случайного пути от заданной точки
+     * 
+     * @param {number} startRow - Строка стартовой точки
+     * @param {number} startCol - Столбец стартовой точки
+     * @param {number} steps - Максимальное количество шагов
+     * @returns {Array<Object>} Массив точек случайного пути, каждая точка имеет координаты {row, col}
+     */
+    getRandomPath(startRow, startCol, steps) {
+        // Проверяем, что лабиринт сгенерирован
+        if (!this.grid) {
+            this.logger.warn('Cannot get random path: maze not generated');
+            return [];
+        }
+        
+        // Используем генератор для получения случайного пути
+        return this.generator.getRandomPath(this.grid, startRow, startCol, steps);
+    }
+    
+    /**
+     * Отрисовка лабиринта
+     * 
+     * @param {Object} [options={}] - Опции для отрисовки
+     * @param {number} [options.cellSize] - Размер ячейки в пикселях
+     * @param {Object} [options.colors] - Цвета для разных типов ячеек
+     * @returns {Maze} Экземпляр лабиринта для цепочки вызовов
+     */
+    render(options = {}) {
+        // Проверяем, что лабиринт сгенерирован
+        if (!this.grid) {
+            this.logger.warn('Cannot render maze: maze not generated');
+            return this;
+        }
+        
+        try {
+            this.logger.debug('Rendering maze...');
+            
+            // Обновляем параметры отрисовки
+            this.renderState.cellSize = options.cellSize || this.renderState.cellSize;
+            this.renderState.colors = options.colors || this.renderState.colors;
+            
+            // Если есть сцена и метод рендеринга, используем их
+            if (this.scene && typeof this.scene.renderMaze === 'function') {
+                this.scene.renderMaze(this.grid, this.start, this.finish, {
+                    cellSize: this.renderState.cellSize,
+                    colors: this.renderState.colors,
+                    borderSize: this.renderState.borderSize,
+                    borderColor: this.renderState.borderColor
+                });
+            } else {
+                this.logger.debug('No rendering context available, skipping visual rendering');
+            }
+            
+            this.renderState.isRendered = true;
+            this.logger.debug('Maze rendering completed');
+            
+            return this;
+        } catch (error) {
+            this.logger.error('Failed to render maze:', error);
+            return this;
+        }
+    }
+    
+    /**
+     * Обновление отрисовки лабиринта (например, при изменении размера окна)
+     * 
+     * @returns {Maze} Экземпляр лабиринта для цепочки вызовов
+     */
+    updateRender() {
+        // Если лабиринт не был отрисован, просто вызываем метод render
+        if (!this.renderState.isRendered) {
+            return this.render();
+        }
+        
+        try {
+            this.logger.debug('Updating maze rendering...');
+            
+            // Если есть сцена и метод обновления рендеринга, используем их
+            if (this.scene && typeof this.scene.updateMazeRender === 'function') {
+                this.scene.updateMazeRender({
+                    cellSize: this.renderState.cellSize,
+                    colors: this.renderState.colors,
+                    borderSize: this.renderState.borderSize,
+                    borderColor: this.renderState.borderColor
+                });
+            } else {
+                // Иначе просто перерисовываем лабиринт
+                return this.render();
+            }
+            
+            this.logger.debug('Maze rendering updated');
+            return this;
+        } catch (error) {
+            this.logger.error('Failed to update maze rendering:', error);
+            return this;
+        }
+    }
+    
+    /**
+     * Получение типа ячейки по координатам
+     * 
+     * @param {number} row - Строка ячейки
+     * @param {number} col - Столбец ячейки
+     * @returns {number|null} Тип ячейки или null, если координаты невалидны
+     */
+    getCellType(row, col) {
+        if (!this.grid || !this.isValidPosition(row, col)) {
+            return null;
+        }
+        
+        return this.grid[row][col];
+    }
+    
+    /**
+     * Проверка, является ли ячейка стеной
+     * 
+     * @param {number} row - Строка ячейки
+     * @param {number} col - Столбец ячейки
+     * @returns {boolean} true, если ячейка является стеной
+     */
+    isWall(row, col) {
+        return this.getCellType(row, col) === this.cellTypes.WALL;
+    }
+    
+    /**
+     * Проверка, является ли ячейка проходом
+     * 
+     * @param {number} row - Строка ячейки
+     * @param {number} col - Столбец ячейки
+     * @returns {boolean} true, если ячейка является проходом
+     */
+    isPath(row, col) {
+        const cellType = this.getCellType(row, col);
+        return cellType === this.cellTypes.EMPTY || 
+               cellType === this.cellTypes.START ||
+               cellType === this.cellTypes.FINISH;
+    }
+    
+    /**
+     * Проверка, является ли ячейка стартом
+     * 
+     * @param {number} row - Строка ячейки
+     * @param {number} col - Столбец ячейки
+     * @returns {boolean} true, если ячейка является стартом
+     */
+    isStart(row, col) {
+        return this.getCellType(row, col) === this.cellTypes.START;
+    }
+    
+    /**
+     * Проверка, является ли ячейка финишем
+     * 
+     * @param {number} row - Строка ячейки
+     * @param {number} col - Столбец ячейки
+     * @returns {boolean} true, если ячейка является финишем
+     */
+    isFinish(row, col) {
+        return this.getCellType(row, col) === this.cellTypes.FINISH;
+    }
+    
+    /**
+     * Получение соседних проходимых ячеек
+     * 
+     * @param {number} row - Строка ячейки
+     * @param {number} col - Столбец ячейки
+     * @returns {Array<Object>} Массив соседних проходимых ячеек, каждая ячейка имеет координаты {row, col, direction}
+     */
+    getNeighbors(row, col) {
+        if (!this.grid) {
+            return [];
+        }
+        
+        return this.generator.getNeighbors(this.grid, row, col);
+    }
+    
+    /**
+     * Расчет расстояния между двумя ячейками (манхэттенское расстояние)
+     * 
+     * @param {number} row1 - Строка первой ячейки
+     * @param {number} col1 - Столбец первой ячейки
+     * @param {number} row2 - Строка второй ячейки
+     * @param {number} col2 - Столбец второй ячейки
+     * @returns {number} Расстояние между ячейками
+     */
+    getDistance(row1, col1, row2, col2) {
+        return Math.abs(row1 - row2) + Math.abs(col1 - col2);
+    }
+    
+    /**
+     * Изменение размеров лабиринта
+     * 
+     * @param {number} newRows - Новое количество строк
+     * @param {number} newCols - Новое количество столбцов
+     * @param {boolean} [regenerate=true] - Нужно ли перегенерировать лабиринт
+     * @returns {Maze} Экземпляр лабиринта для цепочки вызовов
+     */
+    resize(newRows, newCols, regenerate = true) {
+        try {
+            this.logger.info(`Resizing maze from ${this.rows}x${this.cols} to ${newRows}x${newCols}`);
+            
+            // Проверка новых размеров
+            if (!Number.isInteger(newRows) || newRows < 5) {
+                throw new ValidationError(`Invalid rows value: ${newRows}. Must be an integer >= 5`);
+            }
+            
+            if (!Number.isInteger(newCols) || newCols < 5) {
+                throw new ValidationError(`Invalid cols value: ${newCols}. Must be an integer >= 5`);
+            }
+            
+            // Сохраняем новые размеры
+            this.rows = newRows;
+            this.cols = newCols;
+            
+            // Обновляем генератор
+            this.generator = new MazeGenerator({
+                rows: this.rows,
+                cols: this.cols,
+                difficulty: this.difficulty
+            });
+            
+            // Если нужно, перегенерируем лабиринт
+            if (regenerate) {
+                this.generate();
+            }
+            
+            return this;
+        } catch (error) {
+            this.logger.error('Failed to resize maze:', error);
+            throw new Error(`Maze resize failed: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Изменение сложности лабиринта
+     * 
+     * @param {string} newDifficulty - Новый уровень сложности
+     * @param {boolean} [regenerate=true] - Нужно ли перегенерировать лабиринт
+     * @returns {Maze} Экземпляр лабиринта для цепочки вызовов
+     */
+    setDifficulty(newDifficulty, regenerate = true) {
+        try {
+            this.logger.info(`Changing maze difficulty from ${this.difficulty} to ${newDifficulty}`);
+            
+            // Проверка уровня сложности
+            const validDifficulties = Object.values(DifficultyLevels);
+            if (!validDifficulties.includes(newDifficulty)) {
+                this.logger.warn(`Invalid difficulty: ${newDifficulty}. Using 'medium' as default.`);
+                newDifficulty = DifficultyLevels.MEDIUM;
+            }
+            
+            // Сохраняем новую сложность
+            this.difficulty = newDifficulty;
+            
+            // Обновляем генератор
+            this.generator = new MazeGenerator({
+                rows: this.rows,
+                cols: this.cols,
+                difficulty: this.difficulty
+            });
+            
+            // Если нужно, перегенерируем лабиринт
+            if (regenerate) {
+                this.generate();
+            }
+            
+            return this;
+        } catch (error) {
+            this.logger.error('Failed to change maze difficulty:', error);
+            throw new Error(`Maze difficulty change failed: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Оптимизация памяти и ресурсов
+     * 
+     * @returns {Maze} Экземпляр лабиринта для цепочки вызовов
+     */
+    optimizeResources() {
+        try {
+            this.logger.debug('Optimizing maze resources...');
+            
+            // Если лабиринт не отрисован и не используется, можно очистить некоторые данные
+            if (!this.renderState.isRendered && !this.scene) {
+                // Сохраняем только основные данные
+                this.saveState();
+                
+                // Очищаем временные данные
+                this.generator = null;
+                
+                this.logger.debug('Maze resources optimized');
+            } else {
+                this.logger.debug('Maze is currently in use, skipping resource optimization');
+            }
+            
+            return this;
+        } catch (error) {
+            this.logger.error('Failed to optimize maze resources:', error);
+            return this;
+        }
+    }
+    
+    /**
+     * Очистка ресурсов лабиринта перед удалением
+     */
+    destroy() {
+        try {
+            this.logger.info('Destroying maze resources...');
+            
+            // Очищаем данные
+            this.grid = null;
+            this.start = null;
+            this.finish = null;
+            this.generator = null;
+            
+            // Удаляем ссылку на сцену
+            this.scene = null;
+            
+            this.logger.debug('Maze resources destroyed');
+        } catch (error) {
+            this.logger.error('Failed to destroy maze resources:', error);
+        }
+    }
+    
+    /**
+     * Сериализация лабиринта для сохранения или передачи
+     * 
+     * @returns {string} JSON-строка с данными лабиринта
+     */
+    serialize() {
+        try {
+            if (!this.grid) {
+                throw new Error('Cannot serialize: maze not generated');
+            }
+            
+            return JSON.stringify({
+                grid: this.grid,
+                start: this.start,
+                finish: this.finish,
+                metadata: {
+                    rows: this.rows,
+                    cols: this.cols,
+                    difficulty: this.difficulty,
+                    timestamp: Date.now()
+                }
+            });
+        } catch (error) {
+            this.logger.error('Failed to serialize maze:', error);
+            throw new Error(`Failed to serialize maze: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Десериализация лабиринта из JSON-строки
+     * 
+     * @param {string} serialized - JSON-строка с данными лабиринта
+     * @returns {Maze} Экземпляр лабиринта для цепочки вызовов
+     * @throws {Error} Если десериализация не удалась
+     */
+    deserialize(serialized) {
+        try {
+            const data = JSON.parse(serialized);
+            
+            if (!data.grid || !data.start || !data.finish || !data.metadata) {
+                throw new Error('Invalid maze data: missing required fields');
+            }
+            
+            // Обновляем размеры
+            this.rows = data.metadata.rows;
+            this.cols = data.metadata.cols;
+            
+            // Обновляем генератор
+            this.generator = new MazeGenerator({
+                rows: this.rows,
+                cols: this.cols,
+                difficulty: data.metadata.difficulty || this.difficulty
+            });
+            
+            // Загружаем данные
+            this.grid = data.grid;
+            this.start = data.start;
+            this.finish = data.finish;
+            this.difficulty = data.metadata.difficulty || this.difficulty;
+            
+            // Сбрасываем состояние отрисовки
+            this.renderState.isRendered = false;
+            
+            this.logger.info('Maze deserialized successfully');
+            
+            return this;
+        } catch (error) {
+            this.logger.error('Failed to deserialize maze:', error);
+            throw new Error(`Failed to deserialize maze: ${error.message}`);
+        }
+    }
+}
+
+// Экспортируем константы и класс
+export { CellTypes, DifficultyLevels, VisualizationSettings };
