@@ -1,39 +1,28 @@
 require('dotenv').config();
 const express = require('express');
 const { Telegraf } = require('telegraf');
-const game = require('./modules/game');
-
-const app = express();
 
 // Проверяем обязательные переменные окружения
-if (!process.env.TELEGRAM_BOT_TOKEN) {
-    console.error('Ошибка: Не установлен TELEGRAM_BOT_TOKEN');
-    process.exit(1);
+const requiredEnvs = ['TELEGRAM_BOT_TOKEN', 'WEBAPP_URL', 'PORT', 'WEBHOOK_PATH'];
+for (const env of requiredEnvs) {
+    if (!process.env[env]) {
+        console.error(`Ошибка: Не установлен ${env}`);
+        process.exit(1);
+    }
 }
 
-if (!process.env.WEBAPP_URL) {
-    console.error('Ошибка: Не установлен WEBAPP_URL');
-    process.exit(1);
-}
-
-// Используем только разрешенные Telegram порты
-const ALLOWED_PORTS = [443, 80, 88, 8443];
-const port = process.env.PORT || 8443;
-
-if (!ALLOWED_PORTS.includes(Number(port))) {
-    console.error(`Ошибка: Порт ${port} не поддерживается Telegram. Используйте один из портов: ${ALLOWED_PORTS.join(', ')}`);
-    process.exit(1);
-}
-
-// Глобальные переменные состояния
+// Глобальные переменные
+const port = process.env.PORT || 443;
+const webhookPath = process.env.WEBHOOK_PATH || '/webhook';
 let isReady = false;
 let startTime = Date.now();
 let bot = null;
 
-// Настройка Express
+// Создаем Express приложение
+const app = express();
 app.use(express.json());
 
-// Простой healthcheck
+// Базовый healthcheck
 app.get('/', (req, res) => {
     console.log('Healthcheck запрошен:', {
         isReady,
@@ -41,7 +30,6 @@ app.get('/', (req, res) => {
         botInitialized: !!bot
     });
 
-    // Всегда отвечаем 200, но с разным статусом
     res.status(200).json({
         status: isReady ? 'ready' : 'starting',
         uptime: Math.floor((Date.now() - startTime) / 1000),
@@ -51,11 +39,14 @@ app.get('/', (req, res) => {
 });
 
 // Webhook endpoint
-app.post('/webhook', express.json(), (req, res) => {
+app.post(webhookPath, express.json(), (req, res) => {
+    console.log('Webhook запрос получен');
+    
     if (!bot || !isReady) {
         console.log('Webhook получен, но бот не готов:', { botInitialized: !!bot, isReady });
         return res.status(200).json({ ok: false, error: 'Bot is starting' });
     }
+
     bot.handleUpdate(req.body, res);
 });
 
@@ -69,13 +60,22 @@ async function initializeBot() {
         console.log('Бот создан успешно');
 
         // Настраиваем базовые команды
-        bot.command('start', ctx => ctx.reply('Привет! Бот работает.'));
+        bot.command('start', ctx => {
+            return ctx.reply('Привет! Бот работает. Нажми кнопку чтобы начать игру:', {
+                reply_markup: {
+                    inline_keyboard: [[
+                        { text: '🎮 Играть', web_app: { url: process.env.WEBAPP_URL } }
+                    ]]
+                }
+            });
+        });
+
         bot.command('ping', ctx => ctx.reply('pong'));
         
         console.log('Команды бота настроены');
 
         // Устанавливаем webhook
-        const webhookUrl = `${process.env.WEBAPP_URL}/webhook`;
+        const webhookUrl = `${process.env.WEBAPP_URL}${webhookPath}`;
         await bot.telegram.setWebhook(webhookUrl);
         console.log('Webhook установлен:', webhookUrl);
 
@@ -91,6 +91,13 @@ async function initializeBot() {
 }
 
 // Запуск сервера
+console.log('Запуск сервера...');
+console.log('Конфигурация:', {
+    port,
+    webhookPath,
+    webappUrl: process.env.WEBAPP_URL
+});
+
 const server = app.listen(port, async () => {
     console.log(`Сервер запущен на порту ${port}`);
     
