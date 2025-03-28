@@ -1,0 +1,10 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# **Analysis Before Action**:
+   - Before making any changes to the code (adding, deleting, or editing), thoroughly analyze the issue. Verify how the current code aligns with the project structure and rules in `SnailToRichesRules.md`.
+   - Ensure the change is absolutely necessary. If there’s any doubt, first propose an alternative solution that doesn’t modify the existing code, and explain why it might be better.
+

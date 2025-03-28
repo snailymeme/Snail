@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+#  **Logging and Debugging**:
+   - If you encounter an error (e.g., the app doesn’t launch, a transaction fails, the maze doesn’t render), add temporary logs to the code to identify the cause. Use `common/utils/logger.js` for structured logging, as specified in `SnailToRichesRules.md`.
+   - After resolving the issue, ensure temporary logs are removed if they’re no longer needed.

@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# **Preserve Existing Functionality**:
+   - Follow the "Preserve Existing Functionality" rule from `SnailToRichesRules.md`. Before making changes, ensure they won’t break existing features, such as maze generation in `game/Maze/Generator/mazeGenerator.js`, snail movement in `game/Snails/*/patch.js`, or betting logic in `game/Betting/betting.js`.
+   - If a change might affect other parts of the project, test it in an isolated environment first (e.g., run a test race) to confirm nothing breaks.

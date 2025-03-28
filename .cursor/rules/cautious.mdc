@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# **Cautious Deletion**:
+   - Never delete code unless you are 100% certain it’s unnecessary. Before deleting:
+     - Check if the code is used elsewhere in the project (e.g., by searching the project).
+     - Consider whether the issue can be resolved without deletion, such as by adding conditions or refactoring.
+     - If deletion is necessary, first preserve the deleted code in comments with an explanation of why it’s being removed, and ask me to review the change.
+

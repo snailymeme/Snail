@@ -1,0 +1,13 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# **Launch Verification**:
+   - The goal is to ensure the application launches correctly, meaning:
+     - The Telegram bot responds to commands (e.g., `/start`).
+     - Telegram WebApp opens and displays the interface.
+     - The player can select a snail color, place a bet, start a race, and receive winnings.
+     - Solana integration via Phantom works: the wallet connects, and transactions are processed.
+   - If any of these don’t work, identify the cause, fix it, and retest the launch.

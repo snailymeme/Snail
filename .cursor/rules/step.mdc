@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+#  **Step-by-Step Validation**:
+   - After each change (addition, edit, or deletion):
+     - Launch the application and verify it works correctly in Telegram WebApp.
+     - Check the console for errors.
+     - Ensure key features (color selection, maze generation, snail movement, winnings calculation, Solana transactions) work without issues.
+   - If something breaks after a change, immediately revert the change and try a different approach.

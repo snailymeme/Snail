@@ -1,0 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+#  **Compliance with Rules**:
+   - All changes must strictly adhere to the rules in `SnailToRichesRules.md`, including:
+     - "Write Simple Code": Minimize the number of lines, use simple functions.
+     - "Optimize for Readability": Use clear variable and function names, add spacing and line breaks.
+     - "Error Handling": Use `try/catch` for error handling, especially in `blockchain/Transactions/transactions.js`.
+     - "Validate Snail Characteristics", "Validate Maze Generation", "Validate Winnings Calculation": Validate data before use.

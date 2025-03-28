@@ -1,0 +1,13 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# **Report on Actions Taken**:
+   - After each step (analysis, change, validation), provide a detailed report:
+     - What issue you found.
+     - What solutions you considered.
+     - What change you made and why.
+     - How it affected the application launch.
+     - What next steps you recommend.

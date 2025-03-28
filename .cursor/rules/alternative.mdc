@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# **Alternative Solutions**:
+   - For each issue, propose at least two solutions:
+     - First solution: A minimal change that resolves the issue with minimal risk of breaking anything.
+     - Second solution: A more significant change (e.g., refactoring) if it improves the code in the long term.
+   - Explain the pros and cons of each solution and let me choose before making changes.
