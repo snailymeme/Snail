@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snail to Riches</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            font-family: Arial, sans-serif;
+        }
+        
+        canvas {
+            border: 2px solid #333;
+            background-color: #fff;
+            margin: 20px 0;
+        }
+        
+        .controls {
+            margin: 20px 0;
+        }
+        
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            margin: 0 10px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <h1>Snail to Riches</h1>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div class="controls">
+        <button id="startButton">Начать гонку</button>
+        <button id="stopButton" disabled>Остановить</button>
+    </div>
+
+    <script type="module">
+        import Game from './modules/game/index.js';
+
+        // Получаем элементы
+        const canvas = document.getElementById('gameCanvas');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+
+        // Создаем экземпляр игры
+        const game = new Game();
+
+        // Инициализируем игру
+        game.initialize({
+            canvas: canvas,
+            snailCount: 5
+        });
+
+        // Обработчики событий
+        startButton.addEventListener('click', () => {
+            game.start();
+            startButton.disabled = true;
+            stopButton.disabled = false;
+        });
+
+        stopButton.addEventListener('click', () => {
+            game.stop();
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        });
+    </script>
+</body>
+</html> 

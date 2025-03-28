@@ -1,26 +1,24 @@
-FROM node:18-alpine
+# Используем официальный образ Node.js
+FROM node:20-alpine
 
+# Создаем директорию приложения
 WORKDIR /app
 
-# Copy package files
+# Копируем файлы package.json и package-lock.json
 COPY package*.json ./
 
-# Install dependencies
+# Устанавливаем зависимости
 RUN npm install
 
-# Copy app files
+# Копируем исходный код
 COPY . .
 
 # Healthcheck configuration
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
 
-# Expose port
+# Открываем порт
 EXPOSE 443
 
-# Set environment variables
-ENV PORT=443
-ENV NODE_ENV=production
-
-# Start the application
+# Запускаем приложение
 CMD ["npm", "start"] 

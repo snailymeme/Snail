@@ -3,71 +3,93 @@
  * Инициализирует все компоненты игры и предоставляет интерфейс для взаимодействия
  */
 
-const { initializeSnails } = require('./Snails/Core/SnailFactory');
-const { initializeMaze } = require('./Maze/Generator/mazeGenerator');
-const { initializeRace } = require('./Race/race');
-const { initializeBetting } = require('./Betting/betting');
-const { initializeBlockchain } = require('./blockchain/Wallet/wallet');
+import BaseSnail from './snails/Core/BaseSnail.js';
+import { SnailFactory } from './snails/factory.js';
+import { RaceManager } from './Race/raceManager.js';
+import { RaceRenderer } from './Race/raceRenderer.js';
 
 class Game {
     constructor() {
-        this.snails = null;
-        this.maze = null;
-        this.race = null;
-        this.betting = null;
-        this.blockchain = null;
+        this.raceManager = null;
+        this.renderer = null;
+        this.isRunning = false;
+        this.lastUpdate = 0;
     }
 
     /**
-     * Инициализирует все компоненты игры
+     * Инициализирует игру
+     * @param {Object} options - Опции инициализации
+     * @param {HTMLElement} options.canvas - Canvas элемент для отрисовки
+     * @param {number} options.snailCount - Количество улиток в гонке
      */
-    async initialize() {
-        try {
-            // Инициализация компонентов
-            this.snails = await initializeSnails();
-            this.maze = await initializeMaze();
-            this.race = await initializeRace(this.snails, this.maze);
-            this.betting = await initializeBetting(this.race);
-            this.blockchain = await initializeBlockchain();
+    initialize(options) {
+        // Создаем менеджер гонки
+        this.raceManager = new RaceManager({
+            snailCount: options.snailCount || 5,
+            trackWidth: 800,
+            trackHeight: 400,
+            finishLine: { x: 750, y: 200 }
+        });
 
-            console.log('Game initialized successfully');
-            return true;
-        } catch (error) {
-            console.error('Failed to initialize game:', error);
-            return false;
-        }
+        // Создаем рендерер
+        this.renderer = new RaceRenderer(options.canvas);
+        
+        // Инициализируем гонку
+        this.raceManager.initializeRace();
+        
+        console.log('Игра инициализирована');
     }
 
     /**
-     * Начинает новую гонку
-     * @param {Object} bet - Информация о ставке
-     * @returns {Promise<Object>} Результат гонки
+     * Запускает игровой цикл
      */
-    async startRace(bet) {
-        try {
-            // Проверка ставки через blockchain
-            const isValidBet = await this.blockchain.validateBet(bet);
-            if (!isValidBet) {
-                throw new Error('Invalid bet');
-            }
+    start() {
+        if (this.isRunning) return;
+        
+        this.isRunning = true;
+        this.lastUpdate = performance.now();
+        
+        // Запускаем гонку
+        this.raceManager.startRace();
+        
+        // Запускаем игровой цикл
+        this.gameLoop();
+        
+        console.log('Игра запущена');
+    }
 
-            // Начало гонки
-            const result = await this.race.start();
-            
-            // Обработка результата и выплата выигрыша
-            if (result.winner === bet.snailColor) {
-                await this.blockchain.processWin(bet);
-            }
+    /**
+     * Останавливает игру
+     */
+    stop() {
+        this.isRunning = false;
+        this.raceManager.endRace();
+        console.log('Игра остановлена');
+    }
 
-            return result;
-        } catch (error) {
-            console.error('Error during race:', error);
-            throw error;
-        }
+    /**
+     * Основной игровой цикл
+     */
+    gameLoop() {
+        if (!this.isRunning) return;
+
+        const currentTime = performance.now();
+        const deltaTime = (currentTime - this.lastUpdate) / 1000; // Конвертируем в секунды
+        this.lastUpdate = currentTime;
+
+        // Обновляем состояние игры
+        this.raceManager.update(deltaTime);
+
+        // Отрисовываем состояние
+        this.renderer.render(this.raceManager.getRaceState(), {
+            width: 800,
+            height: 400,
+            finishLine: { x: 750, y: 200 }
+        });
+
+        // Планируем следующий кадр
+        requestAnimationFrame(() => this.gameLoop());
     }
 }
 
-// Создаем единственный экземпляр игры
-const game = new Game();
-
-module.exports = game; 
+export default Game; 

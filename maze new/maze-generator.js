@@ -462,68 +462,78 @@ export class MazeGenerator {
             
             // Проверяем, достигли ли мы цели
             if (current.row === finishRow && current.col === finishCol) {
-                // Восстанавливаем путь
-                const path = [];
-                let temp = current;
-                while (temp.parent) {
-                    path.push({
-                        row: temp.row,
-                        col: temp.col
-                    });
-                    temp = temp.parent;
+                // Создаем путь, прорубая стены
+                for (const point of current.path) {
+                    modifiedMaze[point.row][point.col] = this.cellTypes.EMPTY;
                 }
-                path.push({
-                    row: startRow,
-                    col: startCol
-                });
                 
-                this.logger.debug(`Path found, length: ${path.length}`);
-                return path.reverse();
+                this.logger.debug(`Path created from (${startRow},${startCol}) to (${finishRow},${finishCol})`);
+                return modifiedMaze;
             }
             
             // Удаляем текущий узел из openSet и добавляем в closedSet
             openSet.splice(lowestIndex, 1);
             closedSet.add(`${current.row},${current.col}`);
             
-            // Получаем соседей
-            const neighbors = this.getNeighbors(maze, current.row, current.col);
-            
-            for (const neighbor of neighbors) {
-                const key = `${neighbor.row},${neighbor.col}`;
+            // Проверяем все направления
+            for (const [dRow, dCol] of directions) {
+                const newRow = current.row + dRow;
+                const newCol = current.col + dCol;
+                const key = `${newRow},${newCol}`;
                 
-                // Пропускаем уже проверенные узлы
-                if (closedSet.has(key)) continue;
+                // Проверяем, что новая позиция внутри лабиринта и не в закрытом наборе
+                if (!this.isInBounds(newRow, newCol, this.rows, this.cols) || closedSet.has(key)) {
+                    continue;
+                }
                 
-                // Вычисляем g, h и f для соседа
+                // Вычисляем новые стоимости
                 const g = current.g + 1;
-                const h = this.heuristic(neighbor.row, neighbor.col, finishRow, finishCol);
+                const h = this.heuristic(newRow, newCol, finishRow, finishCol);
                 const f = g + h;
                 
-                // Проверяем, есть ли узел в openSet с лучшим путем
-                const openNode = openSet.find(node => node.row === neighbor.row && node.col === neighbor.col);
+                // Проверяем, есть ли узел в открытом наборе с лучшим путем
+                const existingNode = openSet.find(node => node.row === newRow && node.col === newCol);
                 
-                if (openNode) {
-                    if (g < openNode.g) {
-                        openNode.g = g;
-                        openNode.f = g + h;
-                        openNode.parent = current;
-                    }
+                if (existingNode && g >= existingNode.g) {
+                    continue;
+                }
+                
+                // Если узел в открытом наборе с худшим путем, обновляем его
+                if (existingNode) {
+                    existingNode.g = g;
+                    existingNode.f = f;
+                    existingNode.path = [...current.path, { row: newRow, col: newCol }];
                 } else {
-                    // Добавляем новый узел в openSet
+                    // Добавляем новый узел
                     openSet.push({
-                        row: neighbor.row,
-                        col: neighbor.col,
+                        row: newRow,
+                        col: newCol,
                         g,
                         h,
                         f,
-                        parent: current
+                        path: [...current.path, { row: newRow, col: newCol }]
                     });
                 }
             }
         }
         
-        this.logger.warn(`No path found after ${iterations} iterations`);
-        return [];
+        this.logger.warn('Failed to create path using A*. Using alternative method...');
+        
+        // Резервный метод - создаем прямую линию от старта до финиша
+        const dx = finishCol - startCol;
+        const dy = finishRow - startRow;
+        const steps = Math.max(Math.abs(dx), Math.abs(dy));
+        
+        for (let i = 0; i <= steps; i++) {
+            const row = Math.round(startRow + (dy * i) / steps);
+            const col = Math.round(startCol + (dx * i) / steps);
+            
+            if (this.isInBounds(row, col, this.rows, this.cols)) {
+                modifiedMaze[row][col] = this.cellTypes.EMPTY;
+            }
+        }
+        
+        return modifiedMaze;
     }
     
     /**
@@ -707,81 +717,6 @@ export class MazeGenerator {
             throw new Error(`Failed to deserialize maze: ${error.message}`);
         }
     }
-}// Проверяем, достигли ли финиша
-            if (current.row === finishRow && current.col === finishCol) {
-                // Создаем путь, прорубая стены
-                for (const point of current.path) {
-                    modifiedMaze[point.row][point.col] = this.cellTypes.EMPTY;
-                }
-                
-                this.logger.debug(`Path created from (${startRow},${startCol}) to (${finishRow},${finishCol})`);
-                return modifiedMaze;
-            }
-            
-            // Удаляем текущий узел из openSet и добавляем в closedSet
-            openSet.splice(lowestIndex, 1);
-            closedSet.add(`${current.row},${current.col}`);
-            
-            // Проверяем все направления
-            for (const [dRow, dCol] of directions) {
-                const newRow = current.row + dRow;
-                const newCol = current.col + dCol;
-                const key = `${newRow},${newCol}`;
-                
-                // Проверяем, что новая позиция внутри лабиринта и не в закрытом наборе
-                if (!this.isInBounds(newRow, newCol, this.rows, this.cols) || closedSet.has(key)) {
-                    continue;
-                }
-                
-                // Вычисляем новые стоимости
-                const g = current.g + 1;
-                const h = this.heuristic(newRow, newCol, finishRow, finishCol);
-                const f = g + h;
-                
-                // Проверяем, есть ли узел в открытом наборе с лучшим путем
-                const existingNode = openSet.find(node => node.row === newRow && node.col === newCol);
-                
-                if (existingNode && g >= existingNode.g) {
-                    continue;
-                }
-                
-                // Если узел в открытом наборе с худшим путем, обновляем его
-                if (existingNode) {
-                    existingNode.g = g;
-                    existingNode.f = f;
-                    existingNode.path = [...current.path, { row: newRow, col: newCol }];
-                } else {
-                    // Добавляем новый узел
-                    openSet.push({
-                        row: newRow,
-                        col: newCol,
-                        g,
-                        h,
-                        f,
-                        path: [...current.path, { row: newRow, col: newCol }]
-                    });
-                }
-            }
-        }
-        
-        this.logger.warn('Failed to create path using A*. Using alternative method...');
-        
-        // Резервный метод - создаем прямую линию от старта до финиша
-        const dx = finishCol - startCol;
-        const dy = finishRow - startRow;
-        const steps = Math.max(Math.abs(dx), Math.abs(dy));
-        
-        for (let i = 0; i <= steps; i++) {
-            const row = Math.round(startRow + (dy * i) / steps);
-            const col = Math.round(startCol + (dx * i) / steps);
-            
-            if (this.isInBounds(row, col, this.rows, this.cols)) {
-                modifiedMaze[row][col] = this.cellTypes.EMPTY;
-            }
-        }
-        
-        return modifiedMaze;
-    }
     
     /**
      * Проверка и обеспечение стен по внешним границам лабиринта
@@ -851,4 +786,80 @@ export class MazeGenerator {
             
             const current = openSet[lowestIndex];
             
+            // Проверяем, достигли ли финиша
+            if (current.row === finishRow && current.col === finishCol) {
+                // Создаем путь, прорубая стены
+                for (const point of current.path) {
+                    maze[point.row][point.col] = this.cellTypes.EMPTY;
+                }
+                
+                this.logger.debug(`Path created from (${startRow},${startCol}) to (${finishRow},${finishCol})`);
+                return maze;
+            }
             
+            // Удаляем текущий узел из openSet и добавляем в closedSet
+            openSet.splice(lowestIndex, 1);
+            closedSet.add(`${current.row},${current.col}`);
+            
+            // Проверяем все направления
+            for (const [dRow, dCol] of directions) {
+                const newRow = current.row + dRow;
+                const newCol = current.col + dCol;
+                const key = `${newRow},${newCol}`;
+                
+                // Проверяем, что новая позиция внутри лабиринта и не в закрытом наборе
+                if (!this.isInBounds(newRow, newCol, this.rows, this.cols) || closedSet.has(key)) {
+                    continue;
+                }
+                
+                // Вычисляем новые стоимости
+                const g = current.g + 1;
+                const h = this.heuristic(newRow, newCol, finishRow, finishCol);
+                const f = g + h;
+                
+                // Проверяем, есть ли узел в открытом наборе с лучшим путем
+                const existingNode = openSet.find(node => node.row === newRow && node.col === newCol);
+                
+                if (existingNode && g >= existingNode.g) {
+                    continue;
+                }
+                
+                // Если узел в открытом наборе с худшим путем, обновляем его
+                if (existingNode) {
+                    existingNode.g = g;
+                    existingNode.f = f;
+                    existingNode.path = [...current.path, { row: newRow, col: newCol }];
+                } else {
+                    // Добавляем новый узел
+                    openSet.push({
+                        row: newRow,
+                        col: newCol,
+                        g,
+                        h,
+                        f,
+                        path: [...current.path, { row: newRow, col: newCol }]
+                    });
+                }
+            }
+        }
+        
+        this.logger.warn('Failed to create path using A*. Using alternative method...');
+        
+        // Резервный метод - создаем прямую линию от старта до финиша
+        const dx = finishCol - startCol;
+        const dy = finishRow - startRow;
+        const steps = Math.max(Math.abs(dx), Math.abs(dy));
+        
+        for (let i = 0; i <= steps; i++) {
+            const row = Math.round(startRow + (dy * i) / steps);
+            const col = Math.round(startCol + (dx * i) / steps);
+            
+            if (this.isInBounds(row, col, this.rows, this.cols)) {
+                maze[row][col] = this.cellTypes.EMPTY;
+            }
+        }
+        
+        return maze;
+    }
+}
+
